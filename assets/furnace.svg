@@ -1,0 +1,12 @@
+<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <!-- 熔炉主体 -->
+  <rect width="32" height="32" fill="#7f8c8d"/>
+  <!-- 熔炉内部 -->
+  <rect x="4" y="4" width="24" height="24" fill="#95a5a6"/>
+  <!-- 熔炉顶部开口 -->
+  <rect x="8" y="4" width="16" height="4" fill="#2c3e50"/>
+  <!-- 熔炉燃烧室 -->
+  <rect x="8" y="12" width="16" height="12" fill="#34495e"/>
+  <!-- 熔炉底部 -->
+  <rect x="4" y="28" width="24" height="4" fill="#2c3e50"/>
+</svg>

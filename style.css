@@ -1,9 +1,47 @@
 body {
     margin: 0;
     padding: 0;
-    background-color: #87CEEB;
+    background: linear-gradient(to bottom, #87CEEB, #E0F7FA);
     font-family: Arial, sans-serif;
     overflow: hidden;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+}
+
+#startScreen {
+    text-align: center;
+    background-color: rgba(0, 0, 0, 0.7);
+    padding: 40px;
+    border-radius: 20px;
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+}
+
+#startScreen h1 {
+    color: white;
+    font-size: 3em;
+    margin-bottom: 30px;
+    text-shadow: 0 0 10px #00BFFF;
+}
+
+#startButton {
+    background-color: #4CAF50;
+    border: none;
+    color: white;
+    padding: 15px 32px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 1.2em;
+    margin: 4px 2px;
+    cursor: pointer;
+    border-radius: 12px;
+    transition: background-color 0.3s;
+}
+
+#startButton:hover {
+    background-color: #45a049;
 }
 
 #gameContainer {
@@ -34,16 +72,21 @@ body {
     border: 2px solid #fff;
     margin: 0 5px;
     background-color: rgba(255, 255, 255, 0.2);
+    background-size: cover;
     display: flex;
     align-items: center;
     justify-content: center;
     color: white;
     font-weight: bold;
     cursor: pointer;
+    border-radius: 5px;
+    box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
 }
 
 .inventory-slot.selected {
     border-color: #ff0;
+    box-shadow: 0 0 10px #ff0;
+    transform: scale(1.1);
 }
 
 #controls {

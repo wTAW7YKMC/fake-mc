@@ -1,0 +1,6 @@
+<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <!-- 草地方块 -->
+  <rect width="32" height="32" fill="#27ae60"/>
+  <rect y="24" width="32" height="8" fill="#8b4513"/>
+  <path d="M0,24 L32,24 L32,28 L0,28 Z" fill="#2ecc71"/>
+</svg>

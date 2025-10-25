@@ -1,0 +1,8 @@
+<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <!-- 木头方块 -->
+  <rect width="32" height="32" fill="#8b4513"/>
+  <rect x="2" y="0" width="4" height="32" fill="#a0522d"/>
+  <rect x="10" y="0" width="4" height="32" fill="#a0522d"/>
+  <rect x="18" y="0" width="4" height="32" fill="#a0522d"/>
+  <rect x="26" y="0" width="4" height="32" fill="#a0522d"/>
+</svg>

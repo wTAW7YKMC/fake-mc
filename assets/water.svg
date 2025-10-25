@@ -1,0 +1,6 @@
+<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <!-- 水方块 -->
+  <rect width="32" height="32" fill="#4169e1"/>
+  <path d="M0,10 Q8,5 16,10 T32,10 V32 H0 Z" fill="#5a8dee"/>
+  <path d="M0,20 Q8,15 16,20 T32,20 V32 H0 Z" fill="#70a1ff"/>
+</svg>

@@ -1,0 +1,12 @@
+<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <!-- 身体 -->
+  <rect x="12" y="12" width="8" height="12" fill="#3498db"/>
+  <!-- 头部 -->
+  <circle cx="16" cy="8" r="4" fill="#f1c40f"/>
+  <!-- 腿部（分开绘制以便动画） -->
+  <rect id="leftLeg" x="13" y="24" width="3" height="4" fill="#3498db"/>
+  <rect id="rightLeg" x="16" y="24" width="3" height="4" fill="#3498db"/>
+  <!-- 手臂（分开绘制以便动画） -->
+  <rect id="leftArm" x="9" y="12" width="3" height="8" fill="#3498db"/>
+  <rect id="rightArm" x="20" y="12" width="3" height="8" fill="#3498db"/>
+</svg>
