@@ -30,15 +30,18 @@ const BLOCK_TYPES = {
 // 游戏状态
 let gameState = {
     world: [],
+    // 玩家属性优化
     player: {
         x: 50,
         y: 20,
-        vx: 0,
-        vy: 0,
+        vx: 0,        // 水平速度
+        vy: 0,        // 垂直速度
+        ax: 0,        // 水平加速度
+        ay: 0,        // 垂直加速度
         direction: 1, // 1表示向右，-1表示向左
         animationFrame: 0,
         animationTimer: 0
-    },
+    }
     camera: {
         x: 0,
         y: 0
@@ -110,28 +113,97 @@ function loadImages(callback) {
     }
 }
 
-// 初始化游戏
+// 添加背景音乐
+function playBackgroundMusic() {
+    if (!gameState.audioContext) return;
+    
+    // 创建音频振荡器
+    const oscillator = gameState.audioContext.createOscillator();
+    const gainNode = gameState.audioContext.createGain();
+    
+    // 设置振荡器类型和频率（使用低频振荡创造环境音效果）
+    oscillator.type = 'sine';
+    oscillator.frequency.setValueAtTime(110, gameState.audioContext.currentTime); // A2
+    
+    // 设置音量
+    gainNode.gain.setValueAtTime(0.1, gameState.audioContext.currentTime);
+    
+    // 连接节点
+    oscillator.connect(gainNode);
+    gainNode.connect(gameState.audioContext.destination);
+    
+    // 开始播放
+    oscillator.start();
+    
+    // 5秒后逐渐降低音量并停止
+    gainNode.gain.exponentialRampToValueAtTime(0.01, gameState.audioContext.currentTime + 5);
+    oscillator.stop(gameState.audioContext.currentTime + 5);
+    
+    // 循环播放
+    setTimeout(playBackgroundMusic, 5000);
+}
+
+// 在initGame函数中添加启动背景音乐
 function initGame() {
     const canvas = document.getElementById('gameCanvas');
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
     
-    gameState.ctx = canvas.getContext('2d');
+    // 初始化世界
+    generateWorld();
     
-    // 加载图像资源
-    loadImages(() => {
-        // 生成世界
-        generateWorld();
-        
-        // 设置事件监听器
-        setupEventListeners();
-        
-        // 初始化物品栏
-        initInventory();
-        
-        // 开始游戏循环
-        gameLoop();
-    });
+    // 初始化玩家
+    gameState.player = {
+        x: Math.floor(WORLD_WIDTH / 2),
+        y: Math.floor(WORLD_HEIGHT / 2),
+        vx: 0,
+        vy: 0,
+        ax: 0, // 加速度
+        ay: 0, // 加速度
+        direction: 1, // 1表示向右，-1表示向左
+        animationFrame: 0, // 动画帧
+        animationTimer: 0  // 动画计时器
+    };
+    
+    // 初始化相机
+    gameState.camera = {
+        x: 0,
+        y: 0
+    };
+    
+    // 初始化按键状态
+    gameState.keys = {};
+    
+    // 初始化物品栏
+    gameState.inventory = [
+        { type: 1, count: 10 },  // 草地
+        { type: 2, count: 10 },  // 泥土
+        { type: 3, count: 10 },  // 石头
+        { type: 4, count: 5 },   // 木头
+        { type: 5, count: 5 },   // 叶子
+        { type: 6, count: 3 },   // 水
+        { type: 7, count: 5 },   // 沙子
+        { type: 8, count: 2 },   // 煤炭
+        { type: 9, count: 1 }    // 铁矿
+    ];
+    
+    // 初始化选中的物品栏槽位
+    gameState.selectedSlot = 0;
+    
+    // 创建音效上下文
+    gameState.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    
+    // 设置事件监听器
+    setupEventListeners();
+    
+    // 更新物品栏UI
+    updateInventoryUI();
+    
+    // 启动背景音乐
+    playBackgroundMusic();
+    
+    // 开始游戏循环
+    gameLoop();
 }
 
 // 生成随机世界
@@ -237,10 +309,28 @@ function setupEventListeners() {
         const worldY = Math.floor((mouseY + gameState.camera.y) / BLOCK_SIZE);
         
         if (e.button === 0) { // 左键挖掘
-            mineBlock(worldX, worldY);
+            // 设置挖掘动画
+            playerAnimations.mining = true;
+            playerAnimations.miningProgress = 0;
+            playerAnimations.miningX = worldX;
+            playerAnimations.miningY = worldY;
         } else if (e.button === 2) { // 右键放置
             placeBlock(worldX, worldY);
         }
+    });
+    
+    // 鼠标抬起事件，取消挖掘
+    document.getElementById('gameCanvas').addEventListener('mouseup', (e) => {
+        if (e.button === 0) { // 左键
+            playerAnimations.mining = false;
+            playerAnimations.miningProgress = 0;
+        }
+    });
+    
+    // 鼠标离开画布，取消挖掘
+    document.getElementById('gameCanvas').addEventListener('mouseleave', () => {
+        playerAnimations.mining = false;
+        playerAnimations.miningProgress = 0;
     });
     
     // 阻止右键菜单
@@ -372,6 +462,9 @@ function mineBlock(x, y) {
     if (x >= 0 && x < WORLD_WIDTH && y >= 0 && y < WORLD_HEIGHT) {
         const blockType = gameState.world[x][y];
         if (blockType !== BLOCK_TYPES.AIR) {
+            // 添加粒子效果
+            createParticles(x * BLOCK_SIZE - gameState.camera.x, y * BLOCK_SIZE - gameState.camera.y, blockType);
+            
             // 添加到物品栏
             const inventoryItem = gameState.inventory.find(item => item.type === blockType);
             if (inventoryItem) {
@@ -380,6 +473,28 @@ function mineBlock(x, y) {
             
             // 设置为空气
             gameState.world[x][y] = BLOCK_TYPES.AIR;
+            
+            // 播放音效（如果支持）
+            try {
+                // 创建简单的点击音效
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                oscillator.type = 'square';
+                oscillator.frequency.value = 200 + Math.random() * 100;
+                gainNode.gain.value = 0.1;
+                
+                oscillator.start();
+                setTimeout(() => {
+                    oscillator.stop();
+                }, 100);
+            } catch (e) {
+                // 音频上下文可能不可用，静默失败
+            }
             
             // 更新UI
             updateInventoryUI();
@@ -400,6 +515,30 @@ function placeBlock(x, y) {
                 gameState.world[x][y] = blockType;
                 gameState.inventory[gameState.selectedSlot].count--;
                 
+                // 添加放置动画
+                createPlaceAnimation(x * BLOCK_SIZE - gameState.camera.x, y * BLOCK_SIZE - gameState.camera.y);
+                
+                // 播放放置音效
+                try {
+                    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    const oscillator = audioContext.createOscillator();
+                    const gainNode = audioContext.createGain();
+                    
+                    oscillator.connect(gainNode);
+                    gainNode.connect(audioContext.destination);
+                    
+                    oscillator.type = 'sine';
+                    oscillator.frequency.value = 150 + Math.random() * 50;
+                    gainNode.gain.value = 0.1;
+                    
+                    oscillator.start();
+                    setTimeout(() => {
+                        oscillator.stop();
+                    }, 150);
+                } catch (e) {
+                    // 音频上下文可能不可用，静默失败
+                }
+                
                 // 更新UI
                 updateInventoryUI();
             }
@@ -407,25 +546,62 @@ function placeBlock(x, y) {
     }
 }
 
+// 添加玩家动画状态
+let playerAnimations = {
+    mining: false,
+    miningProgress: 0,
+    miningX: 0,
+    miningY: 0
+};
+
 // 更新玩家位置
 function updatePlayer() {
-    // 处理输入
-    gameState.player.vx = 0;
-    gameState.player.vy = 0;
+    // 处理输入 - 应用加速度
+    const acceleration = 0.5;
+    const maxSpeed = 5;
+    const friction = 0.85;
     
+    // 水平移动
     if (gameState.keys['a'] || gameState.keys['arrowleft']) {
-        gameState.player.vx = -3;
+        gameState.player.ax = -acceleration;
         gameState.player.direction = -1; // 向左
-    }
-    if (gameState.keys['d'] || gameState.keys['arrowright']) {
-        gameState.player.vx = 3;
+    } else if (gameState.keys['d'] || gameState.keys['arrowright']) {
+        gameState.player.ax = acceleration;
         gameState.player.direction = 1; // 向右
+    } else {
+        gameState.player.ax = 0;
     }
+    
+    // 垂直移动（简化版本，实际游戏中可能需要重力）
     if (gameState.keys['w'] || gameState.keys['arrowup']) {
-        gameState.player.vy = -3;
+        gameState.player.ay = -acceleration;
+    } else if (gameState.keys['s'] || gameState.keys['arrowdown']) {
+        gameState.player.ay = acceleration;
+    } else {
+        gameState.player.ay = 0;
     }
-    if (gameState.keys['s'] || gameState.keys['arrowdown']) {
-        gameState.player.vy = 3;
+    
+    // 更新速度
+    gameState.player.vx += gameState.player.ax;
+    gameState.player.vy += gameState.player.ay;
+    
+    // 限制最大速度
+    if (gameState.player.vx > maxSpeed) gameState.player.vx = maxSpeed;
+    if (gameState.player.vx < -maxSpeed) gameState.player.vx = -maxSpeed;
+    if (gameState.player.vy > maxSpeed) gameState.player.vy = maxSpeed;
+    if (gameState.player.vy < -maxSpeed) gameState.player.vy = -maxSpeed;
+    
+    // 应用摩擦力
+    if (gameState.player.ax === 0) {
+        gameState.player.vx *= friction;
+        // 当速度非常小时停止移动
+        if (Math.abs(gameState.player.vx) < 0.1) gameState.player.vx = 0;
+    }
+    
+    if (gameState.player.ay === 0) {
+        gameState.player.vy *= friction;
+        // 当速度非常小时停止移动
+        if (Math.abs(gameState.player.vy) < 0.1) gameState.player.vy = 0;
     }
     
     // 更新玩家位置
@@ -442,6 +618,17 @@ function updatePlayer() {
     } else {
         gameState.player.animationFrame = 0; // 静止时回到第一帧
         gameState.player.animationTimer = 0;
+    }
+    
+    // 更新挖掘动画
+    if (playerAnimations.mining) {
+        playerAnimations.miningProgress += 0.1;
+        if (playerAnimations.miningProgress >= 1) {
+            // 挖掘完成
+            mineBlock(playerAnimations.miningX, playerAnimations.miningY);
+            playerAnimations.mining = false;
+            playerAnimations.miningProgress = 0;
+        }
     }
     
     // 边界检查
@@ -467,127 +654,186 @@ function updatePlayer() {
 
 // 渲染游戏
 function render() {
-    const ctx = gameState.ctx;
-    const canvas = ctx.canvas;
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
     
-    // 清除画布并绘制天空背景
-    const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    gradient.addColorStop(0, "#87CEEB"); // 浅蓝色天空
-    gradient.addColorStop(1, "#E0F7FA"); // 浅青色地平线
-    
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // 清空画布
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     
     // 计算可见区域
     const startX = Math.floor(gameState.camera.x / BLOCK_SIZE);
     const startY = Math.floor(gameState.camera.y / BLOCK_SIZE);
-    const endX = Math.min(WORLD_WIDTH, startX + VIEWPORT_WIDTH + 1);
-    const endY = Math.min(WORLD_HEIGHT, startY + VIEWPORT_HEIGHT + 1);
+    const endX = Math.min(WORLD_WIDTH, startX + Math.ceil(canvas.width / BLOCK_SIZE) + 1);
+    const endY = Math.min(WORLD_HEIGHT, startY + Math.ceil(canvas.height / BLOCK_SIZE) + 1);
     
-    // 渲染方块
+    // 绘制背景（天空）
+    const timeOfDay = (Date.now() / 100000) % 1; // 简单的时间循环
+    const skyColorValue = Math.sin(timeOfDay * Math.PI * 2) * 50 + 150; // 明暗变化
+    ctx.fillStyle = `rgb(${skyColorValue}, ${skyColorValue}, ${skyColorValue * 1.2})`;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    // 绘制云朵
+    drawCloud(ctx, 100 - (gameState.camera.x * 0.1) % canvas.width, 50 - gameState.camera.y * 0.1, 60, 30);
+    drawCloud(ctx, 300 - (gameState.camera.x * 0.1) % canvas.width, 80 - gameState.camera.y * 0.1, 80, 40);
+    drawCloud(ctx, 500 - (gameState.camera.x * 0.1) % canvas.width, 60 - gameState.camera.y * 0.1, 70, 35);
+    
+    // 绘制背景装饰物（草、花等）
     for (let x = startX; x < endX; x++) {
         for (let y = startY; y < endY; y++) {
-            const blockType = gameState.world[x][y];
-            if (blockType !== BLOCK_TYPES.AIR) {
-                const blockX = x * BLOCK_SIZE - gameState.camera.x;
-                const blockY = y * BLOCK_SIZE - gameState.camera.y;
+            if (y > 0 && world[y - 1][x] === 0 && world[y][x] === 1) { // 方块上方为空气
+                if (Math.random() < 0.1) { // 10%概率出现草
+                    ctx.fillStyle = '#2E8B57';
+                    ctx.fillRect(
+                        x * BLOCK_SIZE - gameState.camera.x,
+                        (y - 1) * BLOCK_SIZE - gameState.camera.y,
+                        BLOCK_SIZE / 4,
+                        BLOCK_SIZE / 2
+                    );
+                } else if (Math.random() < 0.02) { // 2%概率出现花
+                    // 花茎
+                    ctx.fillStyle = '#228B22';
+                    ctx.fillRect(
+                        x * BLOCK_SIZE + BLOCK_SIZE / 2 - 1 - gameState.camera.x,
+                        (y - 1) * BLOCK_SIZE - gameState.camera.y,
+                        2,
+                        BLOCK_SIZE / 3
+                    );
+                    // 花朵
+                    ctx.fillStyle = '#FF69B4';
+                    ctx.beginPath();
+                    ctx.arc(
+                        x * BLOCK_SIZE + BLOCK_SIZE / 2 - gameState.camera.x,
+                        (y - 1) * BLOCK_SIZE - 5 - gameState.camera.y,
+                        4,
+                        0,
+                        Math.PI * 2
+                    );
+                    ctx.fill();
+                }
+            }
+        }
+    }
+    
+    // 绘制方块
+    for (let x = startX; x < endX; x++) {
+        for (let y = startY; y < endY; y++) {
+            const blockType = world[y][x];
+            if (blockType !== 0) { // 不是空气
+                // 根据方块类型设置颜色
+                switch (blockType) {
+                    case 1: // 草地
+                        ctx.fillStyle = '#7CFC00';
+                        break;
+                    case 2: // 泥土
+                        ctx.fillStyle = '#8B4513';
+                        break;
+                    case 3: // 石头
+                        ctx.fillStyle = '#808080';
+                        break;
+                    case 4: // 木头
+                        ctx.fillStyle = '#8B4513';
+                        break;
+                    case 5: // 叶子
+                        ctx.fillStyle = '#228B22';
+                        break;
+                    case 6: // 水
+                        ctx.fillStyle = '#1E90FF';
+                        break;
+                    case 7: // 沙子
+                        ctx.fillStyle = '#F0E68C';
+                        break;
+                    case 8: // 煤炭
+                        ctx.fillStyle = '#2F4F4F';
+                        break;
+                    case 9: // 铁矿
+                        ctx.fillStyle = '#C0C0C0';
+                        break;
+                    case 10: // 钻石
+                        ctx.fillStyle = '#00BFFF';
+                        break;
+                    default:
+                        ctx.fillStyle = '#FF0000'; // 未知方块用红色表示
+                }
                 
-                // 使用图像渲染方块（如果图像已加载）
-            if (gameState.images[blockType]) {
-                ctx.drawImage(
-                    gameState.images[blockType],
-                    blockX,
-                    blockY,
+                // 应用光照效果（简单的Y轴光照）
+                const lightLevel = Math.max(0.3, 1 - (y / WORLD_HEIGHT) * 0.7); // 顶部更亮，底部更暗
+                const currentFillStyle = ctx.fillStyle;
+                const rgbValues = currentFillStyle.match(/\d+/g);
+                if (rgbValues && rgbValues.length >= 3) {
+                    ctx.fillStyle = `rgb(${Math.floor(rgbValues[0] * lightLevel)}, ${Math.floor(rgbValues[1] * lightLevel)}, ${Math.floor(rgbValues[2] * lightLevel)})`;
+                }
+                
+                ctx.fillRect(
+                    x * BLOCK_SIZE - gameState.camera.x,
+                    y * BLOCK_SIZE - gameState.camera.y,
                     BLOCK_SIZE,
                     BLOCK_SIZE
                 );
-                // 添加边框
-                ctx.strokeStyle = '#000';
-                ctx.lineWidth = 1;
-                ctx.strokeRect(blockX, blockY, BLOCK_SIZE, BLOCK_SIZE);
-            } else {
-                // 如果图像未加载，使用默认颜色
-                const defaultColors = {
-                    [BLOCK_TYPES.GRASS]: '#7CFC00',
-                    [BLOCK_TYPES.DIRT]: '#8B4513',
-                    [BLOCK_TYPES.STONE]: '#808080',
-                    [BLOCK_TYPES.WOOD]: '#8B4513',
-                    [BLOCK_TYPES.LEAVES]: '#228B22',
-                    [BLOCK_TYPES.WATER]: '#4169E1',
-                    [BLOCK_TYPES.SAND]: '#F0E68C',
-                    [BLOCK_TYPES.COAL]: '#2C3E50',
-                    [BLOCK_TYPES.IRON]: '#7F8C8D',
-                    [BLOCK_TYPES.DIAMOND]: '#3498DB',
-                    [BLOCK_TYPES.REDSTONE]: '#E74C3C',
-                    [BLOCK_TYPES.CRAFTING_TABLE]: '#E67E22',
-                    [BLOCK_TYPES.FURNACE]: '#7F8C8D',
-                    [BLOCK_TYPES.CHEST]: '#8B4513',
-                    [BLOCK_TYPES.TORCH]: '#FF9800',
-                    [BLOCK_TYPES.LADDER]: '#654321'
-                };
                 
-                ctx.fillStyle = defaultColors[blockType] || '#FFFFFF';
-                ctx.fillRect(blockX, blockY, BLOCK_SIZE, BLOCK_SIZE);
-                
-                // 绘制边框
-                ctx.strokeStyle = '#000';
+                // 绘制方块边框
+                ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
                 ctx.lineWidth = 1;
-                ctx.strokeRect(blockX, blockY, BLOCK_SIZE, BLOCK_SIZE);
-            }
+                ctx.strokeRect(
+                    x * BLOCK_SIZE - gameState.camera.x,
+                    y * BLOCK_SIZE - gameState.camera.y,
+                    BLOCK_SIZE,
+                    BLOCK_SIZE
+                );
             }
         }
     }
     
-    // 渲染玩家
-    const playerX = gameState.player.x * BLOCK_SIZE - gameState.camera.x;
-    const playerY = gameState.player.y * BLOCK_SIZE - gameState.camera.y;
+    // 绘制玩家
+    ctx.fillStyle = '#FF0000';
+    ctx.fillRect(
+        gameState.player.x * BLOCK_SIZE - gameState.camera.x,
+        gameState.player.y * BLOCK_SIZE - gameState.camera.y,
+        BLOCK_SIZE,
+        BLOCK_SIZE * 1.5 // 玩家比方块高一点
+    );
     
-    // 绘制阴影
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-    ctx.fillRect(playerX + 2, playerY + 2, BLOCK_SIZE, BLOCK_SIZE);
+    // 绘制玩家眼睛
+    ctx.fillStyle = '#FFFFFF';
+    const eyeOffsetX = gameState.player.direction > 0 ? 5 : -5;
+    ctx.fillRect(
+        gameState.player.x * BLOCK_SIZE - gameState.camera.x + 5 + eyeOffsetX,
+        gameState.player.y * BLOCK_SIZE - gameState.camera.y + 5,
+        4,
+        4
+    );
     
-    // 使用图像渲染玩家（如果图像已加载）
-    if (gameState.images.player) {
-        // 保存当前上下文状态
-        ctx.save();
+    // 绘制挖掘进度条
+    if (playerAnimations.mining) {
+        const screenX = playerAnimations.miningX * BLOCK_SIZE - gameState.camera.x;
+        const screenY = playerAnimations.miningY * BLOCK_SIZE - gameState.camera.y;
         
-        // 如果玩家向左移动，水平翻转图像
-        if (gameState.player.direction === -1) {
-            ctx.translate(playerX + BLOCK_SIZE, playerY);
-            ctx.scale(-1, 1);
-            ctx.drawImage(gameState.images.player, 0, 0, BLOCK_SIZE, BLOCK_SIZE);
-        } else {
-            ctx.drawImage(gameState.images.player, playerX, playerY, BLOCK_SIZE, BLOCK_SIZE);
-        }
+        // 进度条背景
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        ctx.fillRect(screenX, screenY - 10, BLOCK_SIZE, 5);
         
-        // 恢复上下文状态
-        ctx.restore();
-    } else {
-        // 如果图像未加载，使用默认的红色方块和简单动画
-        ctx.fillStyle = '#FF0000';
-        ctx.fillRect(playerX, playerY, BLOCK_SIZE, BLOCK_SIZE);
-        
-        // 绘制边框
-        ctx.strokeStyle = '#000';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(playerX, playerY, BLOCK_SIZE, BLOCK_SIZE);
+        // 进度条前景
+        ctx.fillStyle = '#00FF00';
+        ctx.fillRect(screenX, screenY - 10, BLOCK_SIZE * playerAnimations.miningProgress, 5);
     }
     
-    // 添加玩家动画效果（腿部摆动和手臂摆动）
-    if (gameState.images.player && (gameState.player.vx !== 0 || gameState.player.vy !== 0)) {
-        // 这里可以添加更复杂的SVG动画逻辑
-        // 由于SVG动画在Canvas中比较复杂，我们通过改变绘制位置来模拟动画
-        const animationOffset = Math.sin(gameState.player.animationTimer * 0.5) * 2;
-        
-        // 可以在这里添加额外的动画元素
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-        ctx.fillRect(playerX + 10, playerY + 10 + animationOffset, 4, 4);
-    }
+    // 渲染粒子系统
+    renderParticles();
+}
+
+// 绘制云朵
+function drawCloud(ctx, x, y) {
+    ctx.beginPath();
+    ctx.arc(x, y, 20, 0, Math.PI * 2);
+    ctx.arc(x + 15, y - 10, 15, 0, Math.PI * 2);
+    ctx.arc(x + 30, y, 20, 0, Math.PI * 2);
+    ctx.arc(x + 15, y + 10, 15, 0, Math.PI * 2);
+    ctx.fill();
 }
 
 // 游戏循环
 function gameLoop() {
     updatePlayer();
+    updateParticles(); // 更新粒子系统
     render();
     requestAnimationFrame(gameLoop);
 }
@@ -604,3 +850,120 @@ window.onload = () => {
         initGame();
     });
 };
+
+// 粒子系统
+let particles = [];
+
+// 创建挖掘粒子效果
+function createParticles(x, y, blockType) {
+    const particleCount = 8;
+    const colors = {
+        [BLOCK_TYPES.GRASS]: ['#7CFC00', '#228B22', '#8B4513'],
+        [BLOCK_TYPES.DIRT]: ['#8B4513', '#A0522D', '#654321'],
+        [BLOCK_TYPES.STONE]: ['#808080', '#A9A9A9', '#696969'],
+        [BLOCK_TYPES.WOOD]: ['#8B4513', '#A0522D', '#654321'],
+        [BLOCK_TYPES.LEAVES]: ['#228B22', '#32CD32', '#006400'],
+        [BLOCK_TYPES.WATER]: ['#1E90FF', '#00BFFF', '#87CEEB'],
+        [BLOCK_TYPES.SAND]: ['#F0E68C', '#FFD700', '#DAA520'],
+        [BLOCK_TYPES.COAL]: ['#2C3E50', '#34495E', '#1C2833'],
+        [BLOCK_TYPES.IRON]: ['#7F8C8D', '#95A5A6', '#BDC3C7'],
+        [BLOCK_TYPES.DIAMOND]: ['#3498DB', '#5DADE2', '#85C1E9'],
+        [BLOCK_TYPES.REDSTONE]: ['#E74C3C', '#EC7063', '#F1948A'],
+        [BLOCK_TYPES.CRAFTING_TABLE]: ['#E67E22', '#EB984E', '#F0B27A'],
+        [BLOCK_TYPES.FURNACE]: ['#7F8C8D', '#95A5A6', '#BDC3C7'],
+        [BLOCK_TYPES.CHEST]: ['#8B4513', '#A0522D', '#654321'],
+        [BLOCK_TYPES.TORCH]: ['#FF9800', '#FFA500', '#FFB347'],
+        [BLOCK_TYPES.LADDER]: ['#654321', '#8B4513', '#A0522D']
+    };
+    
+    const blockColors = colors[blockType] || ['#FFFFFF', '#CCCCCC', '#999999'];
+    
+    for (let i = 0; i < particleCount; i++) {
+        particles.push({
+            x: x + BLOCK_SIZE / 2,
+            y: y + BLOCK_SIZE / 2,
+            vx: (Math.random() - 0.5) * 4,
+            vy: (Math.random() - 0.5) * 4,
+            color: blockColors[Math.floor(Math.random() * blockColors.length)],
+            size: Math.random() * 3 + 2,
+            life: 30 // 粒子存在时间
+        });
+    }
+}
+
+// 创建放置动画
+function createPlaceAnimation(x, y) {
+    // 简单的放置动画效果
+    particles.push({
+        x: x + BLOCK_SIZE / 2,
+        y: y + BLOCK_SIZE / 2,
+        vx: 0,
+        vy: 0,
+        color: '#FFFFFF',
+        size: BLOCK_SIZE,
+        life: 15,
+        expand: true // 标记为扩展动画
+    });
+}
+
+// 更新粒子系统
+function updateParticles() {
+    for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        
+        // 更新粒子位置
+        p.x += p.vx;
+        p.y += p.vy;
+        
+        // 减少生命值
+        p.life--;
+        
+        // 如果粒子生命结束，移除它
+        if (p.life <= 0) {
+            particles.splice(i, 1);
+        }
+    }
+}
+
+// 渲染粒子系统
+function renderParticles() {
+    const ctx = gameState.ctx;
+    
+    for (let i = 0; i < particles.length; i++) {
+        const p = particles[i];
+        
+        // 保存当前上下文
+        ctx.save();
+        
+        // 设置粒子颜色和透明度
+        if (p.expand) {
+            // 扩展动画，逐渐变透明
+            const alpha = p.life / 15;
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = p.color;
+            
+            // 计算当前大小（从0到完整大小）
+            const currentSize = (1 - p.life / 15) * p.size;
+            ctx.fillRect(
+                p.x - currentSize / 2, 
+                p.y - currentSize / 2, 
+                currentSize, 
+                currentSize
+            );
+        } else {
+            // 普通粒子效果
+            const alpha = p.life / 30;
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = p.color;
+            ctx.fillRect(
+                p.x - p.size / 2, 
+                p.y - p.size / 2, 
+                p.size, 
+                p.size
+            );
+        }
+        
+        // 恢复上下文
+        ctx.restore();
+    }
+}
