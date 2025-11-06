@@ -41,7 +41,7 @@ let gameState = {
         direction: 1, // 1表示向右，-1表示向左
         animationFrame: 0,
         animationTimer: 0
-    }
+    },
     camera: {
         x: 0,
         y: 0
@@ -680,7 +680,7 @@ function render() {
     // 绘制背景装饰物（草、花等）
     for (let x = startX; x < endX; x++) {
         for (let y = startY; y < endY; y++) {
-            if (y > 0 && world[y - 1][x] === 0 && world[y][x] === 1) { // 方块上方为空气
+            if (y > 0 && gameState.world[y - 1][x] === 0 && gameState.world[y][x] === 1) { // 方块上方为空气
                 if (Math.random() < 0.1) { // 10%概率出现草
                     ctx.fillStyle = '#2E8B57';
                     ctx.fillRect(
@@ -717,7 +717,7 @@ function render() {
     // 绘制方块
     for (let x = startX; x < endX; x++) {
         for (let y = startY; y < endY; y++) {
-            const blockType = world[y][x];
+            const blockType = gameState.world[y][x];
             if (blockType !== 0) { // 不是空气
                 // 根据方块类型设置颜色
                 switch (blockType) {
@@ -927,7 +927,8 @@ function updateParticles() {
 
 // 渲染粒子系统
 function renderParticles() {
-    const ctx = gameState.ctx;
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
     
     for (let i = 0; i < particles.length; i++) {
         const p = particles[i];
