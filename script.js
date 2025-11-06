@@ -298,51 +298,56 @@ function setupEventListeners() {
         gameState.keys[e.key.toLowerCase()] = false;
     });
     
-    // 鼠标事件
-    document.getElementById('gameCanvas').addEventListener('mousedown', (e) => {
-        const rect = e.target.getBoundingClientRect();
-        const mouseX = e.clientX - rect.left;
-        const mouseY = e.clientY - rect.top;
+    const canvas = document.getElementById('gameCanvas');
+    if (canvas) {
+        // 鼠标事件
+        canvas.addEventListener('mousedown', (e) => {
+            const rect = e.target.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+            
+            // 转换为世界坐标
+            const worldX = Math.floor((mouseX + gameState.camera.x) / BLOCK_SIZE);
+            const worldY = Math.floor((mouseY + gameState.camera.y) / BLOCK_SIZE);
+            
+            if (e.button === 0) { // 左键挖掘
+                // 设置挖掘动画
+                playerAnimations.mining = true;
+                playerAnimations.miningProgress = 0;
+                playerAnimations.miningX = worldX;
+                playerAnimations.miningY = worldY;
+            } else if (e.button === 2) { // 右键放置
+                placeBlock(worldX, worldY);
+            }
+        });
         
-        // 转换为世界坐标
-        const worldX = Math.floor((mouseX + gameState.camera.x) / BLOCK_SIZE);
-        const worldY = Math.floor((mouseY + gameState.camera.y) / BLOCK_SIZE);
+        // 鼠标抬起事件，取消挖掘
+        canvas.addEventListener('mouseup', (e) => {
+            if (e.button === 0) { // 左键
+                playerAnimations.mining = false;
+                playerAnimations.miningProgress = 0;
+            }
+        });
         
-        if (e.button === 0) { // 左键挖掘
-            // 设置挖掘动画
-            playerAnimations.mining = true;
-            playerAnimations.miningProgress = 0;
-            playerAnimations.miningX = worldX;
-            playerAnimations.miningY = worldY;
-        } else if (e.button === 2) { // 右键放置
-            placeBlock(worldX, worldY);
-        }
-    });
-    
-    // 鼠标抬起事件，取消挖掘
-    document.getElementById('gameCanvas').addEventListener('mouseup', (e) => {
-        if (e.button === 0) { // 左键
+        // 鼠标离开画布，取消挖掘
+        canvas.addEventListener('mouseleave', () => {
             playerAnimations.mining = false;
             playerAnimations.miningProgress = 0;
-        }
-    });
-    
-    // 鼠标离开画布，取消挖掘
-    document.getElementById('gameCanvas').addEventListener('mouseleave', () => {
-        playerAnimations.mining = false;
-        playerAnimations.miningProgress = 0;
-    });
-    
-    // 阻止右键菜单
-    document.getElementById('gameCanvas').addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-    });
+        });
+        
+        // 阻止右键菜单
+        canvas.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+        });
+    }
     
     // 窗口大小调整
     window.addEventListener('resize', () => {
         const canvas = document.getElementById('gameCanvas');
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
+        if (canvas) {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
     });
     
     // 数字键选择物品栏
