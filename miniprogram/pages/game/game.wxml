@@ -1,0 +1,32 @@
+<view class="game-container">
+  <!-- 游戏画布 -->
+<canvas 
+  id="gameCanvas" 
+  type="2d" 
+  class="game-canvas"
+  bindtouchstart="digBlock"
+  bindtouchmove="onTouchMove"
+  bindtouchend="placeBlock">
+</canvas>
+  
+  <!-- 物品栏 -->
+  <view class="inventory">
+    <view 
+      wx:for="{{inventory}}" 
+      wx:key="index"
+      class="inventory-slot {{index === selectedSlot ? 'selected' : ''}}"
+      bindtap="selectSlot"
+      data-index="{{index}}">
+      <view 
+        class="inventory-item" 
+        style="background-color: {{getItemColor(item.type)}};">
+        <text wx:if="{{item.count > 0}}">{{item.count}}</text>
+      </view>
+    </view>
+  </view>
+  
+  <!-- 控制说明 -->
+  <view class="controls">
+    <text>触摸移动 | 点击挖掘 | 长按放置</text>
+  </view>
+</view>

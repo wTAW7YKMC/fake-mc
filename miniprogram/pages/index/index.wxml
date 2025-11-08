@@ -1,0 +1,6 @@
+<view class="container">
+  <view class="start-screen">
+    <text class="title">沙盒游戏</text>
+    <button class="start-button" bindtap="startGame">开始游戏</button>
+  </view>
+</view>

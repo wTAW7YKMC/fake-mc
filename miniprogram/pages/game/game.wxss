@@ -1,0 +1,58 @@
+.game-container {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+}
+
+.game-canvas {
+  width: 100vw;
+  height: 100vh;
+  display: block;
+  background-color: #87CEEB;
+}
+
+.inventory {
+  position: absolute;
+  bottom: 20rpx;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  background-color: rgba(0, 0, 0, 0.5);
+  border-radius: 10rpx;
+  padding: 10rpx;
+}
+
+.inventory-slot {
+  width: 50rpx;
+  height: 50rpx;
+  border: 2rpx solid #fff;
+  margin: 0 5rpx;
+  background-color: rgba(255, 255, 255, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: bold;
+  cursor: pointer;
+  border-radius: 5rpx;
+  box-shadow: 0 0 5rpx rgba(0, 0, 0, 0.5);
+}
+
+.inventory-slot.selected {
+  border-color: #ff0;
+  box-shadow: 0 0 10rpx #ff0;
+  transform: scale(1.1);
+}
+
+.controls {
+  position: absolute;
+  top: 20rpx;
+  left: 50%;
+  transform: translateX(-50%);
+  color: white;
+  background-color: rgba(0, 0, 0, 0.5);
+  padding: 10rpx 20rpx;
+  border-radius: 10rpx;
+  text-align: center;
+  font-size: 24rpx;
+}

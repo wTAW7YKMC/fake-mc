@@ -142,3 +142,7 @@ GitHub Pages会自动检测到新的提交并重新部署网站。
 3. **Firebase Hosting** - Google提供的快速、安全的托管服务
 
 这些平台通常提供更高级的功能，如自定义域名、SSL证书和全球CDN。
+
+## 技术文档
+
+有关游戏的详细技术实现，请参阅项目根目录下的技术规格文档 [TECHNICAL_SPECIFICATION.md](TECHNICAL_SPECIFICATION.md)。

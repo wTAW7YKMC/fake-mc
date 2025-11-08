@@ -47,6 +47,7 @@
 - JavaScript实现游戏逻辑
 - CSS用于界面样式
 - Web Audio API用于音效和背景音乐
+- 详细技术规格请参阅 [技术规格文档](TECHNICAL_SPECIFICATION.md)
 
 ## 浏览器兼容性
 
