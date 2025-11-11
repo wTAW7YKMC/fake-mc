@@ -13,6 +13,25 @@
     </div>
     <div id="gameContainer" style="display: none;">
         <canvas id="gameCanvas"></canvas>
+        
+        <!-- HUD 显示区域 -->
+        <div id="hud">
+            <div id="playerInfo">
+                <div class="hud-item">
+                    <span class="hud-label">分层:</span>
+                    <span id="currentLayer" class="hud-value">地表</span>
+                </div>
+                <div class="hud-item">
+                    <span class="hud-label">生物群系:</span>
+                    <span id="currentBiome" class="hud-value">森林</span>
+                </div>
+                <div class="hud-item">
+                    <span class="hud-label">重力:</span>
+                    <span id="gravityInfo" class="hud-value">100%</span>
+                </div>
+            </div>
+        </div>
+        
         <div id="inventory">
             <!-- 物品栏将在这里动态生成 -->
         </div>

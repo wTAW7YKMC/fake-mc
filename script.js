@@ -1,9 +1,120 @@
+// 简单的Simplex噪声实现（简化版）
+class SimplexNoise {
+    constructor() {
+        this.grad3 = [
+            [1,1,0], [-1,1,0], [1,-1,0], [-1,-1,0],
+            [1,0,1], [-1,0,1], [1,0,-1], [-1,0,-1],
+            [0,1,1], [0,-1,1], [0,1,-1], [0,-1,-1]
+        ];
+        this.p = [];
+        for (let i = 0; i < 256; i++) {
+            this.p[i] = Math.floor(Math.random() * 256);
+        }
+        this.perm = new Array(512);
+        for (let i = 0; i < 512; i++) {
+            this.perm[i] = this.p[i & 255];
+        }
+    }
+
+    dot(g, x, y) {
+        return g[0] * x + g[1] * y;
+    }
+
+    noise2D(xin, yin) {
+        let n0, n1, n2; // Noise contributions from the three corners
+        // Skew the input space to determine which simplex cell we're in
+        const F2 = 0.5 * (Math.sqrt(3.0) - 1.0);
+        const s = (xin + yin) * F2; // Hairy factor for 2D
+        const i = Math.floor(xin + s);
+        const j = Math.floor(yin + s);
+        const G2 = (3.0 - Math.sqrt(3.0)) / 6.0;
+        const t = (i + j) * G2;
+        const X0 = i - t; // Unskew the cell origin back to (x,y) space
+        const Y0 = j - t;
+        const x0 = xin - X0; // The x,y distances from the cell origin
+        const y0 = yin - Y0;
+        
+        // For the 2D case, the simplex shape is an equilateral triangle.
+        // Determine which simplex we are in.
+        let i1, j1; // Offsets for second (middle) corner of simplex in (i,j) coords
+        if (x0 > y0) {
+            i1 = 1; j1 = 0; // lower triangle, XY order: (0,0)->(1,0)->(1,1)
+        } else {
+            i1 = 0; j1 = 1; // upper triangle, YX order: (0,0)->(0,1)->(1,1)
+        }
+        
+        // A step of (1,0) in (i,j) means a step of (1-c,-c) in (x,y), and
+        // a step of (0,1) in (i,j) means a step of (-c,1-c) in (x,y), where
+        // c = (3-sqrt(3))/6
+        const x1 = x0 - i1 + G2; // Offsets for middle corner in (x,y) unskewed coords
+        const y1 = y0 - j1 + G2;
+        const x2 = x0 - 1.0 + 2.0 * G2; // Offsets for last corner in (x,y) unskewed coords
+        const y2 = y0 - 1.0 + 2.0 * G2;
+        
+        // Work out the hashed gradient indices of the three simplex corners
+        const ii = i & 255;
+        const jj = j & 255;
+        const gi0 = this.perm[ii + this.perm[jj]] % 12;
+        const gi1 = this.perm[ii + i1 + this.perm[jj + j1]] % 12;
+        const gi2 = this.perm[ii + 1 + this.perm[jj + 1]] % 12;
+        
+        // Calculate the contribution from the three corners
+        let t0 = 0.5 - x0 * x0 - y0 * y0;
+        if (t0 < 0) n0 = 0.0;
+        else {
+            t0 *= t0;
+            n0 = t0 * t0 * this.dot(this.grad3[gi0], x0, y0);
+        }
+        
+        let t1 = 0.5 - x1 * x1 - y1 * y1;
+        if (t1 < 0) n1 = 0.0;
+        else {
+            t1 *= t1;
+            n1 = t1 * t1 * this.dot(this.grad3[gi1], x1, y1);
+        }
+        
+        let t2 = 0.5 - x2 * x2 - y2 * y2;
+        if (t2 < 0) n2 = 0.0;
+        else {
+            t2 *= t2;
+            n2 = t2 * t2 * this.dot(this.grad3[gi2], x2, y2);
+        }
+        
+        // Add contributions from each corner to get the final noise value.
+        // The result is scaled to return values in the interval [-1,1].
+        return 70.0 * (n0 + n1 + n2);
+    }
+}
+
 // 游戏常量
 const BLOCK_SIZE = 32;
-const WORLD_WIDTH = 100;
-const WORLD_HEIGHT = 50;
+const WORLD_WIDTH = 200; // 扩大世界宽度以容纳更多生物群系
+const WORLD_HEIGHT = 100; // 增加世界高度以支持纵向分层
 const VIEWPORT_WIDTH = Math.ceil(window.innerWidth / BLOCK_SIZE);
 const VIEWPORT_HEIGHT = Math.ceil(window.innerHeight / BLOCK_SIZE);
+
+// 生物群系类型
+const BIOME_TYPES = {
+    PLAINS: 0,    // 平原
+    FOREST: 1,    // 森林
+    DESERT: 2     // 荒漠
+};
+
+// 纵向分层
+const LAYER_TYPES = {
+    SURFACE: 0,   // 地表 (Y=60~100)
+    UNDERGROUND: 1, // 地下 (Y=20~60)
+    CAVE: 2,      // 洞穴 (Y=-20~20)
+    ABYSS: 3      // 深渊 (Y<-20)
+};
+
+// 重力参数
+const GRAVITY_PARAMS = {
+    [LAYER_TYPES.SURFACE]: 1.0,    // 地表正常重力
+    [LAYER_TYPES.UNDERGROUND]: 0.95, // 地下轻微重力降低
+    [LAYER_TYPES.CAVE]: 0.9,      // 洞穴重力降低10%
+    [LAYER_TYPES.ABYSS]: 0.8       // 深渊重力降低20%
+};
 
 // 方块类型
 const BLOCK_TYPES = {
@@ -30,17 +141,24 @@ const BLOCK_TYPES = {
 // 游戏状态
 let gameState = {
     world: [],
+    biomeMap: [], // 生物群系地图
+    layerMap: [], // 纵向分层地图
+    structures: [], // 结构点信息
+    terrainFeatures: [], // 动态地形元素
     // 玩家属性优化
     player: {
-        x: 50,
-        y: 20,
+        x: 100, // 调整到世界中心
+        y: 80,  // 调整到地表附近
         vx: 0,        // 水平速度
         vy: 0,        // 垂直速度
         ax: 0,        // 水平加速度
         ay: 0,        // 垂直加速度
         direction: 1, // 1表示向右，-1表示向左
         animationFrame: 0,
-        animationTimer: 0
+        animationTimer: 0,
+        currentBiome: BIOME_TYPES.PLAINS, // 当前生物群系
+        currentLayer: LAYER_TYPES.SURFACE, // 当前分层
+        gravityMultiplier: 1.0 // 重力乘数
     },
     camera: {
         x: 0,
@@ -196,6 +314,9 @@ function initGame() {
     // 设置事件监听器
     setupEventListeners();
     
+    // 初始化物品栏
+    initInventory();
+    
     // 更新物品栏UI
     updateInventoryUI();
     
@@ -206,83 +327,555 @@ function initGame() {
     gameLoop();
 }
 
-// 生成随机世界
-function generateWorld() {
-    // 初始化为空气
+// 生成生物群系地图
+function generateBiomeMap() {
+    // 使用噪声生成生物群系分布
+    const biomeNoise = new SimplexNoise();
+    
     for (let x = 0; x < WORLD_WIDTH; x++) {
-        gameState.world[x] = [];
+        gameState.biomeMap[x] = [];
         for (let y = 0; y < WORLD_HEIGHT; y++) {
-            if (y > WORLD_HEIGHT - 5) {
-                // 底层生成石头
-                gameState.world[x][y] = BLOCK_TYPES.STONE;
-            } else if (y > WORLD_HEIGHT - 8) {
-                // 中层生成泥土
-                gameState.world[x][y] = BLOCK_TYPES.DIRT;
-            } else if (y > WORLD_HEIGHT - 10) {
-                // 表层生成草方块
-                gameState.world[x][y] = BLOCK_TYPES.GRASS;
-            } else if (y > WORLD_HEIGHT - 20 && Math.random() < 0.05) {
-                // 在地下生成矿物
-                const rand = Math.random();
-                if (rand < 0.7) {
-                    gameState.world[x][y] = BLOCK_TYPES.COAL;
-                } else if (rand < 0.9) {
-                    gameState.world[x][y] = BLOCK_TYPES.IRON;
-                } else {
-                    gameState.world[x][y] = BLOCK_TYPES.DIAMOND;
-                }
-            } else if (y > WORLD_HEIGHT - 25 && Math.random() < 0.02) {
-                // 生成红石
-                gameState.world[x][y] = BLOCK_TYPES.REDSTONE;
+            // 使用噪声值决定生物群系
+            const noiseValue = biomeNoise.noise2D(x * 0.01, y * 0.01);
+            
+            if (noiseValue < -0.3) {
+                gameState.biomeMap[x][y] = BIOME_TYPES.DESERT; // 荒漠
+            } else if (noiseValue < 0.3) {
+                gameState.biomeMap[x][y] = BIOME_TYPES.PLAINS; // 平原
             } else {
-                // 其他位置为空气
-                gameState.world[x][y] = BLOCK_TYPES.AIR;
+                gameState.biomeMap[x][y] = BIOME_TYPES.FOREST; // 森林
             }
         }
     }
     
-    // 生成一些树木
-    for (let i = 0; i < 5; i++) {
-        const treeX = Math.floor(Math.random() * (WORLD_WIDTH - 10)) + 5;
-        const treeHeight = Math.floor(Math.random() * 3) + 4;
-        const treeY = WORLD_HEIGHT - 10 - treeHeight;
+    // 平滑生物群系过渡
+    smoothBiomeMap();
+}
+
+// 平滑生物群系过渡
+function smoothBiomeMap() {
+    const smoothedMap = [];
+    
+    for (let x = 0; x < WORLD_WIDTH; x++) {
+        smoothedMap[x] = [];
+        for (let y = 0; y < WORLD_HEIGHT; y++) {
+            // 检查周围8个格子的生物群系
+            const neighbors = [];
+            for (let dx = -1; dx <= 1; dx++) {
+                for (let dy = -1; dy <= 1; dy++) {
+                    const nx = x + dx;
+                    const ny = y + dy;
+                    if (nx >= 0 && nx < WORLD_WIDTH && ny >= 0 && ny < WORLD_HEIGHT) {
+                        neighbors.push(gameState.biomeMap[nx][ny]);
+                    }
+                }
+            }
+            
+            // 使用多数投票决定当前格子的生物群系
+            const biomeCounts = {};
+            neighbors.forEach(biome => {
+                biomeCounts[biome] = (biomeCounts[biome] || 0) + 1;
+            });
+            
+            let maxCount = 0;
+            let dominantBiome = gameState.biomeMap[x][y];
+            
+            for (const biome in biomeCounts) {
+                if (biomeCounts[biome] > maxCount) {
+                    maxCount = biomeCounts[biome];
+                    dominantBiome = parseInt(biome);
+                }
+            }
+            
+            smoothedMap[x][y] = dominantBiome;
+        }
+    }
+    
+    gameState.biomeMap = smoothedMap;
+}
+
+// 生成纵向分层地图
+function generateLayerMap() {
+    for (let x = 0; x < WORLD_WIDTH; x++) {
+        gameState.layerMap[x] = [];
+        for (let y = 0; y < WORLD_HEIGHT; y++) {
+            if (y >= 60) {
+                gameState.layerMap[x][y] = LAYER_TYPES.SURFACE; // 地表
+            } else if (y >= 20) {
+                gameState.layerMap[x][y] = LAYER_TYPES.UNDERGROUND; // 地下
+            } else if (y >= -20) {
+                gameState.layerMap[x][y] = LAYER_TYPES.CAVE; // 洞穴
+            } else {
+                gameState.layerMap[x][y] = LAYER_TYPES.ABYSS; // 深渊
+            }
+        }
+    }
+}
+
+// 生成随机世界（泰拉瑞亚/星露谷风格）
+function generateWorld() {
+    const world = [];
+    const biomeMap = [];
+    const layerMap = [];
+    
+    // 初始化世界数组
+    for (let x = 0; x < WORLD_WIDTH; x++) {
+        world[x] = [];
+        biomeMap[x] = [];
+        layerMap[x] = [];
+        for (let y = 0; y < WORLD_HEIGHT; y++) {
+            world[x][y] = BLOCK_TYPES.AIR;
+            biomeMap[x][y] = 'plains'; // 默认生物群系
+            layerMap[x][y] = 'surface'; // 默认分层
+        }
+    }
+    
+    // 生成生物群系地图
+    generateBiomeMap(biomeMap);
+    
+    // 生成分层地图
+    generateLayerMap(layerMap);
+    
+    // 基于生物群系和分层生成基础地形
+    generateBaseTerrain(world, biomeMap, layerMap);
+    
+    // 生成生物群系特色结构
+    generateBiomeFeatures(world, biomeMap, layerMap);
+    
+    // 生成结构点（废弃小屋、树洞、枯井）
+    const structures = generateStructures(world, biomeMap, layerMap);
+    
+    // 生成动态地形元素（河流、悬崖）
+    const terrainFeatures = generateDynamicTerrain(world, biomeMap, layerMap);
+    
+    // 更新游戏状态
+    gameState.world = world;
+    gameState.biomeMap = biomeMap;
+    gameState.layerMap = layerMap;
+    gameState.structures = structures;
+    gameState.terrainFeatures = terrainFeatures;
+}
+
+// 生成结构点（废弃小屋、树洞、枯井）
+function generateStructures(world, biomeMap, layerMap) {
+    const structures = [];
+    
+    // 平原：废弃小屋
+    for (let i = 0; i < 3; i++) {
+        const x = Math.floor(Math.random() * (WORLD_WIDTH - 8)) + 4;
+        const y = findSurfaceHeight(world, x);
         
-        // 树干
-        for (let j = 0; j < treeHeight; j++) {
-            if (treeY + j >= 0 && treeY + j < WORLD_HEIGHT) {
-                gameState.world[treeX][treeY + j] = BLOCK_TYPES.WOOD;
+        if (y > 0 && biomeMap[x][y] === 'plains' && layerMap[x][y] === 'surface') {
+            generateAbandonedHouse(world, x, y);
+            structures.push({type: 'abandoned_house', x, y});
+        }
+    }
+    
+    // 森林：树洞
+    for (let i = 0; i < 5; i++) {
+        const x = Math.floor(Math.random() * (WORLD_WIDTH - 4)) + 2;
+        const y = findSurfaceHeight(world, x);
+        
+        if (y > 0 && biomeMap[x][y] === 'forest' && layerMap[x][y] === 'surface') {
+            generateTreeHole(world, x, y);
+            structures.push({type: 'tree_hole', x, y});
+        }
+    }
+    
+    // 荒漠：枯井
+    for (let i = 0; i < 2; i++) {
+        const x = Math.floor(Math.random() * (WORLD_WIDTH - 4)) + 2;
+        const y = findSurfaceHeight(world, x);
+        
+        if (y > 0 && biomeMap[x][y] === 'desert' && layerMap[x][y] === 'surface') {
+            generateDryWell(world, x, y);
+            structures.push({type: 'dry_well', x, y});
+        }
+    }
+    
+    return structures;
+}
+
+// 查找地表高度
+function findSurfaceHeight(world, x) {
+    for (let y = WORLD_HEIGHT - 1; y >= 0; y--) {
+        if (world[x][y] !== BLOCK_TYPES.AIR) {
+            return y;
+        }
+    }
+    return -1;
+}
+
+// 生成废弃小屋
+function generateAbandonedHouse(world, startX, startY) {
+    const width = 6;
+    const height = 4;
+    
+    // 清理区域
+    for (let x = startX - 1; x <= startX + width; x++) {
+        for (let y = startY; y <= startY + height; y++) {
+            if (x >= 0 && x < WORLD_WIDTH && y >= 0 && y < WORLD_HEIGHT) {
+                world[x][y] = BLOCK_TYPES.AIR;
+            }
+        }
+    }
+    
+    // 地基
+    for (let x = startX; x < startX + width; x++) {
+        if (x >= 0 && x < WORLD_WIDTH && startY >= 0) {
+            world[x][startY] = BLOCK_TYPES.WOOD;
+        }
+    }
+    
+    // 墙壁
+    for (let y = startY + 1; y < startY + height; y++) {
+        if (startX >= 0 && startX < WORLD_WIDTH && y >= 0 && y < WORLD_HEIGHT) {
+            world[startX][y] = BLOCK_TYPES.WOOD;
+        }
+        if (startX + width - 1 >= 0 && startX + width - 1 < WORLD_WIDTH && y >= 0 && y < WORLD_HEIGHT) {
+            world[startX + width - 1][y] = BLOCK_TYPES.WOOD;
+        }
+    }
+    
+    // 屋顶
+    for (let x = startX; x < startX + width; x++) {
+        if (x >= 0 && x < WORLD_WIDTH && startY + height >= 0 && startY + height < WORLD_HEIGHT) {
+            world[x][startY + height] = BLOCK_TYPES.WOOD;
+        }
+    }
+    
+    // 门（留空）
+    if (startX + 2 >= 0 && startX + 2 < WORLD_WIDTH && startY + 1 >= 0 && startY + 1 < WORLD_HEIGHT) {
+        world[startX + 2][startY + 1] = BLOCK_TYPES.AIR;
+    }
+    
+    // 内部物品：工作台和箱子
+    if (startX + 1 >= 0 && startX + 1 < WORLD_WIDTH && startY + 1 >= 0 && startY + 1 < WORLD_HEIGHT) {
+        world[startX + 1][startY + 1] = BLOCK_TYPES.WORKBENCH;
+    }
+    if (startX + 4 >= 0 && startX + 4 < WORLD_WIDTH && startY + 1 >= 0 && startY + 1 < WORLD_HEIGHT) {
+        world[startX + 4][startY + 1] = BLOCK_TYPES.CHEST;
+    }
+}
+
+// 生成树洞
+function generateTreeHole(world, startX, startY) {
+    // 生成大树
+    const treeHeight = 8 + Math.floor(Math.random() * 4);
+    
+    // 树干
+    for (let y = startY + 1; y <= startY + treeHeight; y++) {
+        if (startX >= 0 && startX < WORLD_WIDTH && y >= 0 && y < WORLD_HEIGHT) {
+            world[startX][y] = BLOCK_TYPES.WOOD;
+        }
+    }
+    
+    // 树叶
+    for (let x = startX - 3; x <= startX + 3; x++) {
+        for (let y = startY + treeHeight - 2; y <= startY + treeHeight + 2; y++) {
+            if (x >= 0 && x < WORLD_WIDTH && y >= 0 && y < WORLD_HEIGHT) {
+                if (Math.abs(x - startX) + Math.abs(y - (startY + treeHeight)) <= 3) {
+                    world[x][y] = BLOCK_TYPES.LEAVES;
+                }
+            }
+        }
+    }
+    
+    // 树洞（在树干中间）
+    const holeY = startY + Math.floor(treeHeight / 2);
+    if (startX >= 0 && startX < WORLD_WIDTH && holeY >= 0 && holeY < WORLD_HEIGHT) {
+        world[startX][holeY] = BLOCK_TYPES.AIR;
+        
+        // 树洞内的宝箱
+        if (holeY + 1 >= 0 && holeY + 1 < WORLD_HEIGHT) {
+            world[startX][holeY + 1] = BLOCK_TYPES.CHEST;
+        }
+    }
+}
+
+// 生成枯井
+function generateDryWell(world, startX, startY) {
+    const depth = 10;
+    
+    // 井口
+    for (let x = startX - 1; x <= startX + 1; x++) {
+        for (let y = startY; y <= startY + 1; y++) {
+            if (x >= 0 && x < WORLD_WIDTH && y >= 0 && y < WORLD_HEIGHT) {
+                world[x][y] = BLOCK_TYPES.STONE;
+            }
+        }
+    }
+    
+    // 井身（向下挖空）
+    for (let y = startY + 1; y <= startY + depth; y++) {
+        if (startX >= 0 && startX < WORLD_WIDTH && y >= 0 && y < WORLD_HEIGHT) {
+            world[startX][y] = BLOCK_TYPES.AIR;
+            
+            // 井壁
+            if (startX - 1 >= 0 && startX - 1 < WORLD_WIDTH) {
+                world[startX - 1][y] = BLOCK_TYPES.STONE;
+            }
+            if (startX + 1 >= 0 && startX + 1 < WORLD_WIDTH) {
+                world[startX + 1][y] = BLOCK_TYPES.STONE;
+            }
+        }
+    }
+    
+    // 井底（通往地下通道）
+    const bottomY = startY + depth;
+    if (bottomY >= 0 && bottomY < WORLD_HEIGHT) {
+        // 横向通道
+        for (let x = startX - 3; x <= startX + 3; x++) {
+            if (x >= 0 && x < WORLD_WIDTH) {
+                world[x][bottomY] = BLOCK_TYPES.AIR;
+                if (bottomY + 1 >= 0 && bottomY + 1 < WORLD_HEIGHT) {
+                    world[x][bottomY + 1] = BLOCK_TYPES.AIR;
+                }
             }
         }
         
-        // 树叶
-        for (let x = treeX - 2; x <= treeX + 2; x++) {
-            for (let y = treeY - 2; y <= treeY; y++) {
-                if (x >= 0 && x < WORLD_WIDTH && y >= 0 && y < WORLD_HEIGHT) {
-                    if ((x !== treeX || y < treeY) && Math.random() < 0.7) {
-                        gameState.world[x][y] = BLOCK_TYPES.LEAVES;
+        // 通道内的矿物
+        for (let i = 0; i < 5; i++) {
+            const mineralX = startX - 2 + Math.floor(Math.random() * 5);
+            const mineralY = bottomY - 1;
+            if (mineralX >= 0 && mineralX < WORLD_WIDTH && mineralY >= 0 && mineralY < WORLD_HEIGHT) {
+                world[mineralX][mineralY] = BLOCK_TYPES.IRON_ORE;
+            }
+        }
+    }
+}
+
+// 生成动态地形元素（河流、悬崖）
+function generateDynamicTerrain(world, biomeMap, layerMap) {
+    const terrainFeatures = [];
+    
+    // 生成河流
+    generateRivers(world, biomeMap, layerMap, terrainFeatures);
+    
+    // 生成悬崖
+    generateCliffs(world, biomeMap, layerMap, terrainFeatures);
+    
+    return terrainFeatures;
+}
+
+// 生成河流
+function generateRivers(world, biomeMap, layerMap, terrainFeatures) {
+    const riverCount = 2;
+    
+    for (let riverIndex = 0; riverIndex < riverCount; riverIndex++) {
+        const startY = 30 + Math.floor(Math.random() * 40); // 河流起始高度
+        let currentY = startY;
+        
+        for (let x = 0; x < WORLD_WIDTH; x++) {
+            // 河流蜿蜒
+            const yVariation = Math.sin(x * 0.1 + riverIndex * Math.PI) * 3;
+            currentY = Math.max(10, Math.min(WORLD_HEIGHT - 10, startY + yVariation));
+            
+            // 河流宽度（3-5格）
+            const riverWidth = 3 + Math.floor(Math.random() * 3);
+            
+            for (let offset = -Math.floor(riverWidth/2); offset <= Math.floor(riverWidth/2); offset++) {
+                const riverY = currentY + offset;
+                
+                if (x >= 0 && x < WORLD_WIDTH && riverY >= 0 && riverY < WORLD_HEIGHT) {
+                    // 清除原有方块，生成水
+                    if (layerMap[x][riverY] === 'surface' || layerMap[x][riverY] === 'underground') {
+                        world[x][riverY] = BLOCK_TYPES.WATER;
+                        
+                        // 记录河流特征
+                        terrainFeatures.push({
+                            type: 'river',
+                            x, y: riverY,
+                            biome: biomeMap[x][riverY],
+                            layer: layerMap[x][riverY]
+                        });
                     }
                 }
             }
         }
     }
+}
+
+// 生成悬崖
+function generateCliffs(world, biomeMap, layerMap, terrainFeatures) {
+    const cliffCount = 5;
     
-    // 生成沙地
-    for (let x = 10; x < 20; x++) {
-        for (let y = WORLD_HEIGHT - 8; y < WORLD_HEIGHT - 5; y++) {
-            if (Math.random() < 0.7) {
-                gameState.world[x][y] = BLOCK_TYPES.SAND;
+    for (let i = 0; i < cliffCount; i++) {
+        const cliffX = Math.floor(Math.random() * (WORLD_WIDTH - 20)) + 10;
+        const surfaceY = findSurfaceHeight(world, cliffX);
+        
+        if (surfaceY > 0 && surfaceY < WORLD_HEIGHT - 10) {
+            const cliffHeight = 5 + Math.floor(Math.random() * 8);
+            
+            // 创建悬崖（垂直落差）
+            for (let y = surfaceY; y > surfaceY - cliffHeight; y--) {
+                if (cliffX >= 0 && cliffX < WORLD_WIDTH && y >= 0 && y < WORLD_HEIGHT) {
+                    // 悬崖边缘使用石头
+                    world[cliffX][y] = BLOCK_TYPES.STONE;
+                    
+                    // 记录悬崖特征
+                    terrainFeatures.push({
+                        type: 'cliff',
+                        x: cliffX, y,
+                        height: cliffHeight,
+                        biome: biomeMap[cliffX][y],
+                        layer: layerMap[cliffX][y]
+                    });
+                }
+            }
+            
+            // 在悬崖另一侧创建平台（需要搭建或使用钩爪）
+            const platformX = cliffX + 1;
+            const platformY = surfaceY - cliffHeight + 2;
+            
+            if (platformX >= 0 && platformX < WORLD_WIDTH && platformY >= 0 && platformY < WORLD_HEIGHT) {
+                // 平台上的特殊资源
+                world[platformX][platformY] = BLOCK_TYPES.GOLD_ORE;
+                
+                terrainFeatures.push({
+                    type: 'cliff_platform',
+                    x: platformX, y: platformY,
+                    resource: 'gold_ore'
+                });
             }
         }
     }
+}
+
+// 生成基础地形
+function generateBaseTerrain(world, biomeMap, layerMap) {
+    for (let x = 0; x < WORLD_WIDTH; x++) {
+        for (let y = 0; y < WORLD_HEIGHT; y++) {
+            const biome = biomeMap[x][y];
+            const layer = layerMap[x][y];
+            
+            // 根据分层和生物群系生成方块
+            if (layer === 'surface') {
+                // 地表层 (Y=60~100)
+                if (y >= WORLD_HEIGHT - 5) {
+                    // 底层生成基岩
+                    world[x][y] = BLOCK_TYPES.STONE;
+                } else if (y >= WORLD_HEIGHT - 10) {
+                    // 根据生物群系生成地表方块
+                    if (biome === 'desert') {
+                        world[x][y] = BLOCK_TYPES.SAND;
+                    } else if (biome === 'forest') {
+                        world[x][y] = BLOCK_TYPES.GRASS;
+                    } else {
+                        world[x][y] = BLOCK_TYPES.GRASS; // 平原
+                    }
+                } else if (y >= WORLD_HEIGHT - 15) {
+                    // 地下层顶部
+                    world[x][y] = BLOCK_TYPES.DIRT;
+                } else {
+                    // 空气
+                    world[x][y] = BLOCK_TYPES.AIR;
+                }
+            } else if (layer === 'underground') {
+                // 地下层 (Y=20~60)
+                if (Math.random() < 0.1) {
+                    // 生成矿物
+                    const rand = Math.random();
+                    if (rand < 0.6) {
+                        world[x][y] = BLOCK_TYPES.COAL;
+                    } else if (rand < 0.85) {
+                        world[x][y] = BLOCK_TYPES.IRON_ORE;
+                    } else {
+                        world[x][y] = BLOCK_TYPES.GOLD_ORE;
+                    }
+                } else {
+                    world[x][y] = BLOCK_TYPES.STONE;
+                }
+            } else if (layer === 'cave') {
+                // 洞穴层 (Y=-20~20)
+                if (Math.random() < 0.3) {
+                    // 洞穴空间
+                    world[x][y] = BLOCK_TYPES.AIR;
+                } else if (Math.random() < 0.1) {
+                    // 稀有矿物
+                    world[x][y] = BLOCK_TYPES.REDSTONE;
+                } else {
+                    world[x][y] = BLOCK_TYPES.STONE;
+                }
+            } else {
+                // 深渊层 (Y<-20)
+                if (Math.random() < 0.5) {
+                    // 深渊空间
+                    world[x][y] = BLOCK_TYPES.AIR;
+                } else {
+                    // 深渊岩石
+                    world[x][y] = BLOCK_TYPES.STONE;
+                }
+            }
+        }
+    }
+}
+
+// 生成生物群系特色结构
+function generateBiomeFeatures(world, biomeMap, layerMap) {
+    for (let x = 0; x < WORLD_WIDTH; x++) {
+        for (let y = 0; y < WORLD_HEIGHT; y++) {
+            const biome = biomeMap[x][y];
+            const layer = layerMap[x][y];
+            
+            if (layer === 'surface' && y < WORLD_HEIGHT - 10) {
+                // 平原：生成草丛
+                if (biome === 'plains' && Math.random() < 0.05) {
+                    if (world[x][y] === BLOCK_TYPES.AIR && 
+                        world[x][y+1] === BLOCK_TYPES.GRASS) {
+                        world[x][y] = BLOCK_TYPES.BACKGROUND_DECORATION;
+                    }
+                }
+                
+                // 森林：生成树木
+                if (biome === 'forest' && Math.random() < 0.02) {
+                    generateTree(world, x, y - 1);
+                }
+                
+                // 荒漠：生成仙人掌
+                if (biome === 'desert' && Math.random() < 0.03) {
+                    if (world[x][y] === BLOCK_TYPES.AIR && 
+                        world[x][y+1] === BLOCK_TYPES.SAND) {
+                        generateCactus(world, x, y);
+                    }
+                }
+            }
+        }
+    }
+}
+
+// 生成树木
+function generateTree(world, x, y) {
+    const treeHeight = Math.floor(Math.random() * 3) + 4;
     
-    // 在世界中随机添加背景装饰
-    for (let i = 0; i < 20; i++) {
-        const x = Math.floor(Math.random() * WORLD_WIDTH);
-        const y = Math.floor(Math.random() * (WORLD_HEIGHT / 2)); // 只在上半部分生成
-        
-        // 确保装饰不会覆盖重要方块
-        if (gameState.world[x][y] === BLOCK_TYPES.AIR) {
-            gameState.world[x][y] = BLOCK_TYPES.BACKGROUND_DECORATION;
+    // 树干
+    for (let j = 0; j < treeHeight; j++) {
+        if (y - j >= 0 && y - j < WORLD_HEIGHT) {
+            world[x][y - j] = BLOCK_TYPES.WOOD;
+        }
+    }
+    
+    // 树叶
+    for (let dx = -2; dx <= 2; dx++) {
+        for (let dy = -3; dy <= 0; dy++) {
+            const nx = x + dx;
+            const ny = y - treeHeight + dy;
+            if (nx >= 0 && nx < WORLD_WIDTH && ny >= 0 && ny < WORLD_HEIGHT) {
+                if ((dx !== 0 || dy < 0) && Math.random() < 0.7) {
+                    world[nx][ny] = BLOCK_TYPES.LEAVES;
+                }
+            }
+        }
+    }
+}
+
+// 生成仙人掌
+function generateCactus(world, x, y) {
+    const cactusHeight = Math.floor(Math.random() * 2) + 3;
+    
+    for (let j = 0; j < cactusHeight; j++) {
+        if (y - j >= 0 && y - j < WORLD_HEIGHT) {
+            world[x][y - j] = BLOCK_TYPES.WOOD; // 暂时用木头表示仙人掌
         }
     }
 }
@@ -566,6 +1159,39 @@ function updatePlayer() {
     const maxSpeed = 5;
     const friction = 0.85;
     
+    // 检测玩家当前所在的分层，应用对应的重力参数
+    const playerX = Math.floor(gameState.player.x);
+    const playerY = Math.floor(gameState.player.y);
+    let currentLayer = 'surface'; // 默认分层
+    
+    if (playerX >= 0 && playerX < WORLD_WIDTH && playerY >= 0 && playerY < WORLD_HEIGHT) {
+        currentLayer = gameState.layerMap[playerX][playerY];
+        
+        // 根据分层设置重力乘数
+        switch (currentLayer) {
+            case 'surface':
+                gameState.player.gravityMultiplier = 1.0; // 地表正常重力
+                break;
+            case 'underground':
+                gameState.player.gravityMultiplier = 1.0; // 地下正常重力
+                break;
+            case 'cave':
+                gameState.player.gravityMultiplier = 0.9; // 洞穴重力降低10%
+                break;
+            case 'abyss':
+                gameState.player.gravityMultiplier = 1.2; // 深渊重力增加20%
+                break;
+            default:
+                gameState.player.gravityMultiplier = 1.0;
+        }
+        
+        // 更新玩家当前分层信息
+        gameState.player.currentLayer = currentLayer;
+        
+        // 更新玩家当前生物群系信息
+        gameState.player.currentBiome = gameState.biomeMap[playerX][playerY];
+    }
+    
     // 水平移动
     if (gameState.keys['a'] || gameState.keys['arrowleft']) {
         gameState.player.ax = -acceleration;
@@ -586,15 +1212,19 @@ function updatePlayer() {
         gameState.player.ay = 0;
     }
     
+    // 应用分层重力效果
+    gameState.player.ay += 0.2 * gameState.player.gravityMultiplier; // 基础重力
+    
     // 更新速度
     gameState.player.vx += gameState.player.ax;
     gameState.player.vy += gameState.player.ay;
     
-    // 限制最大速度
-    if (gameState.player.vx > maxSpeed) gameState.player.vx = maxSpeed;
-    if (gameState.player.vx < -maxSpeed) gameState.player.vx = -maxSpeed;
-    if (gameState.player.vy > maxSpeed) gameState.player.vy = maxSpeed;
-    if (gameState.player.vy < -maxSpeed) gameState.player.vy = -maxSpeed;
+    // 限制最大速度（考虑重力乘数）
+    const adjustedMaxSpeed = maxSpeed * (currentLayer === 'cave' ? 1.1 : 1.0); // 洞穴中移动更快
+    if (gameState.player.vx > adjustedMaxSpeed) gameState.player.vx = adjustedMaxSpeed;
+    if (gameState.player.vx < -adjustedMaxSpeed) gameState.player.vx = -adjustedMaxSpeed;
+    if (gameState.player.vy > adjustedMaxSpeed) gameState.player.vy = adjustedMaxSpeed;
+    if (gameState.player.vy < -adjustedMaxSpeed) gameState.player.vy = -adjustedMaxSpeed;
     
     // 应用摩擦力
     if (gameState.player.ax === 0) {
@@ -655,6 +1285,60 @@ function updatePlayer() {
     if (gameState.camera.y > WORLD_HEIGHT * BLOCK_SIZE - window.innerHeight) {
         gameState.camera.y = WORLD_HEIGHT * BLOCK_SIZE - window.innerHeight;
     }
+    
+    // 更新HUD显示
+    updateHUD();
+}
+
+// 更新HUD显示
+function updateHUD() {
+    const layerElement = document.getElementById('currentLayer');
+    const biomeElement = document.getElementById('currentBiome');
+    const gravityElement = document.getElementById('gravityInfo');
+    
+    if (layerElement) {
+        layerElement.textContent = getLayerDisplayName(gameState.player.currentLayer);
+        layerElement.setAttribute('data-layer', gameState.player.currentLayer);
+    }
+    
+    if (biomeElement) {
+        biomeElement.textContent = getBiomeDisplayName(gameState.player.currentBiome);
+        biomeElement.setAttribute('data-biome', gameState.player.currentBiome);
+    }
+    
+    if (gravityElement) {
+        const gravityLevel = getGravityLevel(gameState.player.gravityMultiplier);
+        gravityElement.textContent = gravityLevel;
+        gravityElement.setAttribute('data-gravity', gravityLevel.toLowerCase());
+    }
+}
+
+// 获取分层显示名称
+function getLayerDisplayName(layer) {
+    switch (layer) {
+        case 'surface': return '地表';
+        case 'underground': return '地下';
+        case 'cave': return '洞穴';
+        case 'abyss': return '深渊';
+        default: return '未知';
+    }
+}
+
+// 获取生物群系显示名称
+function getBiomeDisplayName(biome) {
+    switch (biome) {
+        case 'forest': return '森林';
+        case 'desert': return '沙漠';
+        case 'snow': return '雪地';
+        default: return '平原';
+    }
+}
+
+// 获取重力等级
+function getGravityLevel(multiplier) {
+    if (multiplier < 0.95) return '低重力';
+    if (multiplier > 1.05) return '高重力';
+    return '正常重力';
 }
 
 // 渲染游戏
